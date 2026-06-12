@@ -1,44 +1,57 @@
-import { useEffect, useState } from "react";
-import axios from "axios";
+import { useState } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
+import AuthModal from "@/components/AuthModal";
+import AppLayout from "@/layouts/AppLayout";
+import AuthRequired from "@/pages/AuthRequired";
+import CreateUserPage from "@/pages/CreateUserPage";
+import UsersPage from "@/pages/UsersPage";
+import { clearAuth, getStoredAuth, saveAuth } from "@/lib/auth";
+
+function ProtectedRoute({ auth, children }) {
+  if (!auth) return <AuthRequired />;
+  return children;
+}
 
 export default function App() {
-  const [userData, setUserData] = useState([]);
+  const [auth, setAuth] = useState(() => getStoredAuth());
 
-  useEffect(() => {
-    axios
-      .get(`${import.meta.env.VITE_API_URL}/get`)
-      .then((response) => {
-        console.log(response.data);
-        setUserData(response.data.users);
-      })
-      .catch((error) => {
-        console.log(error);
-      });
-  }, []);
+  function handleAuthSuccess({ token, user }) {
+    saveAuth({ token, user });
+    setAuth({ token, user });
+  }
+
+  function handleLogout() {
+    clearAuth();
+    setAuth(null);
+  }
+
   return (
     <>
-      <table className="table-auto" border="1">
-        <thead>
-          <tr>
-            <th className="border border-gray-300">First Name</th>
-            <th className="border border-gray-300">Last Name</th>
-            <th className="border border-gray-300">Email</th>
-            <th className="border border-gray-300">Company</th>
-            <th className="border border-gray-300">Phone</th>
-          </tr>
-        </thead>
-        <tbody>
-          {userData.map((user) => (
-            <tr key={user._id} className="border border-gray-300">
-              <td className="border border-gray-300">{user.firstName}</td>
-              <td className="border border-gray-300">{user.lastName}</td>
-              <td className="border border-gray-300">{user.email}</td>
-              <td className="border border-gray-300">{user.companyName}</td>
-              <td className="border border-gray-300">{user.phone}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <AuthModal open={!auth} onAuthSuccess={handleAuthSuccess} />
+
+      <Routes>
+        <Route
+          element={<AppLayout auth={auth} onLogout={handleLogout} />}
+        >
+          <Route
+            index
+            element={
+              <ProtectedRoute auth={auth}>
+                <UsersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="create"
+            element={
+              <ProtectedRoute auth={auth}>
+                <CreateUserPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
     </>
   );
 }
