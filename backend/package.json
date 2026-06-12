@@ -7,12 +7,13 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js",
-    "dev": "nodemon index.js",
+    "start": "node -r dotenv/config index.js",
+    "dev": "nodemon -r dotenv/config index.js",
     "build": "npm install && npm install -g nodemon && npm install -g bcryptjs && npm install -g cors && npm install -g dotenv && npm install -g jsonwebtoken && npm install -g mongoose"
   },
   "type": "module",
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",

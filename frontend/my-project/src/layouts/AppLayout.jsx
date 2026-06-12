@@ -57,7 +57,7 @@ export default function AppLayout({ auth, onLogout }) {
           {/* Nav + user */}
           <div className="flex items-center gap-3">
             {auth && (
-              <nav className="flex items-center rounded-xl bg-muted/50 p-1.5 ring-1 ring-border/50">
+              <nav className="flex items-center rounded-xl bg-muted/50 p-1.5 ring-0.5 ring-border/50">
                 {navItems.map((item) => (
                   <NavItem key={item.to} {...item} />
                 ))}

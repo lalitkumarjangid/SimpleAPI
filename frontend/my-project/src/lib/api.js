@@ -34,6 +34,11 @@ export async function signIn(data) {
   return response.data;
 }
 
+export async function signInWithGoogle(accessToken) {
+  const response = await api.post("/auth/google", { accessToken });
+  return response.data;
+}
+
 export async function getUsers({ page = 1, limit = 10 } = {}) {
   const response = await api.get("/get", { params: { page, limit } });
   return response.data;

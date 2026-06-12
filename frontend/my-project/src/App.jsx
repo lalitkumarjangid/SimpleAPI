@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import AuthModal from "@/components/AuthModal";
 import AppLayout from "@/layouts/AppLayout";
+import AuthCallback from "@/pages/AuthCallback";
 import AuthRequired from "@/pages/AuthRequired";
 import CreateUserPage from "@/pages/CreateUserPage";
 import UsersPage from "@/pages/UsersPage";
@@ -13,7 +14,9 @@ function ProtectedRoute({ auth, children }) {
 }
 
 export default function App() {
+  const location = useLocation();
   const [auth, setAuth] = useState(() => getStoredAuth());
+  const isAuthCallback = location.pathname === "/auth/callback";
 
   function handleAuthSuccess({ token, user }) {
     saveAuth({ token, user });
@@ -27,9 +30,13 @@ export default function App() {
 
   return (
     <>
-      <AuthModal open={!auth} onAuthSuccess={handleAuthSuccess} />
+      <AuthModal open={!auth && !isAuthCallback} onAuthSuccess={handleAuthSuccess} />
 
       <Routes>
+        <Route
+          path="/auth/callback"
+          element={<AuthCallback onAuthSuccess={handleAuthSuccess} />}
+        />
         <Route
           element={<AppLayout auth={auth} onLogout={handleLogout} />}
         >

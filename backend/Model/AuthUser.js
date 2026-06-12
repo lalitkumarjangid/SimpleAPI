@@ -11,7 +11,13 @@ const authUserSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
-    password: { type: String, required: true, select: false },
+    password: { type: String, select: false },
+    authProvider: {
+      type: String,
+      enum: ["email", "google"],
+      default: "email",
+    },
+    supabaseUserId: { type: String, unique: true, sparse: true },
   },
   { timestamps: true },
 );
