@@ -29,7 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const PAGE_SIZE_OPTIONS = [20, 40, 100];
+const PAGE_SIZE_OPTIONS = [10, 20, 40, 100];
 
 function TableSkeleton({ rows = 5 }) {
   return (
@@ -46,7 +46,7 @@ export default function UsersTable() {
   const [users, setUsers] = useState([]);
   const [pagination, setPagination] = useState({
     page: 1,
-    perPage: 20,
+    perPage: 10,
     total: 0,
     totalPages: 1,
     hasNextPage: false,

@@ -28,8 +28,8 @@ export const createUser = async (req, res) => {
   }
 };
 
-const ALLOWED_PAGE_SIZES = [20, 40, 100];
-const DEFAULT_PAGE_SIZE = 20;
+const ALLOWED_PAGE_SIZES = [10, 20, 40, 100];
+const DEFAULT_PAGE_SIZE = 10;
 
 export const getUsers = async (req, res) => {
   try {
