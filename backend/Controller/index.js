@@ -65,3 +65,8 @@ export const getUsers = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+
+export const healthCheck = (req, res) => {  
+  res.status(200).json({ message: "API is healthy" });
+};

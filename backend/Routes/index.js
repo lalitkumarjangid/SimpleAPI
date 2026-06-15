@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createUser, getUsers } from "../Controller/index.js";
+import { createUser, getUsers, healthCheck } from "../Controller/index.js";
 import { signUp, signIn, googleAuth } from "../Controller/auth.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -10,5 +10,6 @@ router.post("/auth/signin", signIn);
 router.post("/auth/google", googleAuth);
 router.post("/create", authenticate, createUser);
 router.get("/get", authenticate, getUsers);
+router.get("/health", healthCheck);
 
 export default router;
