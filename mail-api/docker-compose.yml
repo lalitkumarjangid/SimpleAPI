@@ -16,10 +16,6 @@ services:
       REACHER_URL: http://reacher:8080
       MAIL_MAX_BATCH: ${MAIL_MAX_BATCH:-50}
       MAIL_CONCURRENCY: ${MAIL_CONCURRENCY:-3}
-      REACHER_PROXY_HOST: ${REACHER_PROXY_HOST:-}
-      REACHER_PROXY_PORT: ${REACHER_PROXY_PORT:-}
-      REACHER_PROXY_USERNAME: ${REACHER_PROXY_USERNAME:-}
-      REACHER_PROXY_PASSWORD: ${REACHER_PROXY_PASSWORD:-}
     depends_on:
       - reacher
     restart: unless-stopped

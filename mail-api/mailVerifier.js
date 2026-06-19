@@ -7,27 +7,13 @@ let reacherAvailableCache = { value: null, checkedAt: 0 };
 const REACH_CACHE_MS = 30_000;
 
 function buildReacherPayload(email) {
-  const payload = { to_email: email };
-
-  const host = process.env.REACHER_PROXY_HOST;
-  const port = process.env.REACHER_PROXY_PORT;
-  if (host && port) {
-    payload.proxy = {
-      host,
-      port: Number(port),
-      ...(process.env.REACHER_PROXY_USERNAME && {
-        username: process.env.REACHER_PROXY_USERNAME,
-      }),
-      ...(process.env.REACHER_PROXY_PASSWORD && {
-        password: process.env.REACHER_PROXY_PASSWORD,
-      }),
-    };
-  }
-
-  return payload;
+  return { to_email: email };
 }
 
 /**
+ * legit = true  ONLY when Reacher confirms mailbox exists (is_reachable: safe)
+ * legit = false → everything else (invalid, risky, catch-all, unknown, role accounts)
+ *
  * @param {string[]} emails
  * @returns {Promise<{ results: object[], reacher: boolean }>}
  */
@@ -42,10 +28,18 @@ export async function checkEmails(emails) {
     const email = String(input).trim().toLowerCase();
 
     if (!email || !EMAIL_REGEX.test(email)) {
-      return formatInvalidSyntax(String(input));
+      return {
+        email: String(input),
+        legit: false,
+        reason: "invalid email syntax",
+        reacher: null,
+      };
     }
 
-    return checkWithReacher(email);
+    const data = await fetchReacher(email);
+    if (data.error) return data.result;
+
+    return mapReacherResult(email, data);
   });
 
   return { results, reacher: true };
@@ -82,83 +76,92 @@ async function isReacherAvailable(force = false) {
   }
 }
 
-async function checkWithReacher(email) {
-  const res = await fetch(`${REACHER_URL}/v0/check_email`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildReacherPayload(email)),
-    signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
-  });
+async function fetchReacher(email) {
+  try {
+    const res = await fetch(`${REACHER_URL}/v0/check_email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildReacherPayload(email)),
+      signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
+    });
 
-  if (!res.ok) {
-    const body = await res.text();
+    if (!res.ok) {
+      const body = await res.text();
+      return {
+        error: true,
+        result: {
+          email,
+          legit: false,
+          reason: `Reacher HTTP ${res.status}`,
+          reacher: { error: body },
+        },
+      };
+    }
+
+    return await res.json();
+  } catch (err) {
     return {
-      email,
-      legit: null,
-      reason: `Reacher HTTP ${res.status}`,
-      reacher: { error: body },
+      error: true,
+      result: {
+        email,
+        legit: false,
+        reason: err.message ?? "Reacher request failed",
+        reacher: null,
+      },
     };
   }
-
-  const data = await res.json();
-  return mapReacherResult(email, data);
 }
 
 function mapReacherResult(email, data) {
-  const reacher = pickReacherFields(data);
+  const legit = mapLegit(data);
 
   return {
     email,
-    legit: mapLegit(data.is_reachable),
-    reason: buildReason(data),
-    reacher,
+    legit,
+    reason: buildReason(data, legit),
+    reacher: pickReacherFields(data),
   };
 }
 
-function formatInvalidSyntax(email) {
-  return {
-    email,
-    legit: false,
-    reason: "invalid syntax — not sent to Reacher",
-    reacher: null,
-  };
+/**
+ * Only Reacher "safe" means the mailbox is proven to exist.
+ * Catch-all / risky / unknown may accept mail at SMTP layer but mailbox is NOT verified.
+ */
+function mapLegit(data) {
+  return data.is_reachable === "safe";
 }
 
-function mapLegit(isReachable) {
-  if (isReachable === "safe") return true;
-  if (isReachable === "invalid") return false;
-  return null;
+function buildReason(data, legit) {
+  if (legit) return "mailbox verified";
+
+  if (data.is_reachable === "invalid") {
+    if (data.smtp?.is_disabled) return "mailbox disabled or does not exist";
+    if (data.misc?.is_disposable) return "disposable email";
+    return "mailbox does not exist";
+  }
+
+  if (data.smtp?.is_catch_all) {
+    return "catch-all domain — mailbox not verified";
+  }
+  if (data.misc?.is_role_account) {
+    return "role account — mailbox not individually verified";
+  }
+  if (data.misc?.is_disposable) return "disposable email";
+  if (isBlockedByProvider(data)) return "provider blocked verification";
+  if (data.is_reachable === "unknown") return "could not verify";
+
+  return `mailbox not verified (is_reachable: ${data.is_reachable})`;
 }
 
-function buildReason(data) {
-  const parts = [`is_reachable: ${data.is_reachable}`];
-
-  if (data.smtp?.is_catch_all) parts.push("catch-all domain");
-  if (data.smtp?.description) parts.push(data.smtp.description);
-  if (data.smtp?.is_deliverable === false && data.smtp?.is_disabled) {
-    parts.push("mailbox disabled");
-  }
-  if (data.smtp?.has_full_inbox) parts.push("inbox full");
-  if (data.misc?.is_disposable) parts.push("disposable email");
-  if (data.misc?.is_role_account) parts.push("role account");
-  if (data.syntax && !data.syntax.is_valid_syntax) parts.push("invalid syntax");
-  if (data.mx && !data.mx.accepts_mail) parts.push("no mx records");
-  if (data.smtp?.is_deliverable === true && !data.smtp?.is_catch_all) {
-    parts.push("mailbox deliverable");
-  }
-  const smtpErr = formatReacherError(data.smtp?.error);
-  if (smtpErr) parts.push(smtpErr);
-  const mxErr = formatReacherError(data.mx?.error);
-  if (mxErr) parts.push(mxErr);
-
-  return parts.join(" — ");
+function isBlockedByProvider(data) {
+  const err = formatReacherError(data.smtp?.error) ?? "";
+  return /policy reasons|dynamic ip|blacklist|do not accept email/i.test(err);
 }
 
 function formatReacherError(err) {
   if (!err) return null;
   if (typeof err === "string") return err;
   if (typeof err.message === "string") return err.message;
-  if (typeof err.description === "string") return err.description;
   return null;
 }
 
@@ -184,7 +187,7 @@ async function mapConcurrent(items, concurrency, fn) {
   }
 
   const workers = Array.from(
-    { length: Math.min(concurrency, items.length) },
+    { length: Math.min(concurrency, items.length || 1) },
     () => worker()
   );
   await Promise.all(workers);
