@@ -38,8 +38,19 @@ app.use((req, res, next) => {
  *
  * Response:
  * {
- *   "results": [{ "email": "a@b.com", "legit": true, "reason": "mailbox verified", "reacher": {} }],
- *   "summary": { "total": 1, "legit": 1, "not_legit": 0 }
+ *   "results": [{
+ *     "email": "a@b.com",
+ *     "legit": "confirmed",
+ *     "reason": "mailbox verified",
+ *     "reacher": {}
+ *   }],
+ *   "summary": {
+ *     "total": 1,
+ *     "confirmed": 1,
+ *     "not_confirmed": 0,
+ *     "invalid": 0,
+ *     "blocked": 0
+ *   }
  * }
  */
 app.post("/verify", async (req, res) => {
@@ -67,14 +78,14 @@ app.post("/verify", async (req, res) => {
       reacher,
     }));
 
-    const legitCount = response.filter((r) => r.legit === true).length;
-
     res.status(200).json({
       results: response,
       summary: {
         total: response.length,
-        legit: legitCount,
-        not_legit: response.length - legitCount,
+        confirmed: response.filter((r) => r.legit === "confirmed").length,
+        not_confirmed: response.filter((r) => r.legit === "not_confirmed").length,
+        invalid: response.filter((r) => r.legit === "invalid").length,
+        blocked: response.filter((r) => r.legit === "blocked").length,
       },
     });
   } catch (err) {

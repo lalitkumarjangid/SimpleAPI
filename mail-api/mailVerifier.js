@@ -3,6 +3,9 @@ const REACHER_URL = process.env.REACHER_URL ?? "http://localhost:8080";
 const CHECK_TIMEOUT_MS = Number(process.env.MAIL_CHECK_TIMEOUT_MS ?? 45000);
 const CONCURRENCY = Number(process.env.MAIL_CONCURRENCY ?? 3);
 
+const MICROSOFT_MX =
+  /mail\.protection\.outlook\.com|\.outlook\.com|\.ppe\.hosted\.protection\.outlook\.com/i;
+
 let reacherAvailableCache = { value: null, checkedAt: 0 };
 const REACH_CACHE_MS = 30_000;
 
@@ -11,8 +14,17 @@ function buildReacherPayload(email) {
 }
 
 /**
- * legit = true  ONLY when Reacher confirms mailbox exists (is_reachable: safe)
- * legit = false → everything else (invalid, risky, catch-all, unknown, role accounts)
+ * trust_level:
+ *   verified   — high confidence (safe, or risky+deliverable on non-catch-all)
+ *   invalid    — proven bad (does not exist, disposable)
+ *   unverified — inconclusive (catch-all, M365 ambiguous, risky+not deliverable)
+ *   blocked    — provider refused SMTP check
+ *
+ * legit (string):
+ *   confirmed      — mailbox verified
+ *   not_confirmed  — inconclusive (catch-all, M365, ambiguous SMTP)
+ *   invalid        — proven bad (typo, doesn't exist, disposable)
+ *   blocked        — provider refused the check
  *
  * @param {string[]} emails
  * @returns {Promise<{ results: object[], reacher: boolean }>}
@@ -28,12 +40,11 @@ export async function checkEmails(emails) {
     const email = String(input).trim().toLowerCase();
 
     if (!email || !EMAIL_REGEX.test(email)) {
-      return {
-        email: String(input),
-        legit: false,
+      return resultRow(String(input), {
+        legit: "invalid",
         reason: "invalid email syntax",
         reacher: null,
-      };
+      });
     }
 
     const data = await fetchReacher(email);
@@ -89,12 +100,11 @@ async function fetchReacher(email) {
       const body = await res.text();
       return {
         error: true,
-        result: {
-          email,
-          legit: false,
+        result: resultRow(email, {
+          legit: "blocked",
           reason: `Reacher HTTP ${res.status}`,
           reacher: { error: body },
-        },
+        }),
       };
     }
 
@@ -102,70 +112,96 @@ async function fetchReacher(email) {
   } catch (err) {
     return {
       error: true,
-      result: {
-        email,
-        legit: false,
+      result: resultRow(email, {
+        legit: "blocked",
         reason: err.message ?? "Reacher request failed",
         reacher: null,
-      },
+      }),
     };
   }
 }
 
 function mapReacherResult(email, data) {
-  const legit = mapLegit(data);
+  const trust_level = classifyTrust(data);
+  const legit = trustToLegitLabel(trust_level);
 
-  return {
-    email,
+  return resultRow(email, {
     legit,
-    reason: buildReason(data, legit),
+    reason: buildReason(data, trust_level),
     reacher: pickReacherFields(data),
-  };
+  });
 }
 
-/**
- * B2B-friendly rules (Reacher only):
- * - true:  mailbox individually verified (safe), OR deliverable on non-catch-all domain
- * - false: does not exist, catch-all domain, disposable, or provider blocked
- *
- * Catch-all stays false — domain accepts fake addresses too (fake123@domain.com).
- * Role accounts (talent@, hi@) on normal domains → true if deliverable.
- */
-function mapLegit(data) {
-  if (data.is_reachable === "invalid") return false;
-  if (data.misc?.is_disposable) return false;
-  if (data.smtp?.is_disabled) return false;
-  if (data.smtp?.is_catch_all) return false;
+function resultRow(email, fields) {
+  return { email, ...fields };
+}
 
-  if (data.is_reachable === "safe") return true;
+function classifyTrust(data) {
+  if (data.is_reachable === "invalid") return "invalid";
+  if (data.misc?.is_disposable) return "invalid";
+  if (data.smtp?.is_disabled && data.is_reachable === "invalid") return "invalid";
+
+  if (isBlockedByProvider(data) || data.is_reachable === "unknown") {
+    return "blocked";
+  }
+
+  if (data.is_reachable === "safe") return "verified";
+
+  if (data.smtp?.is_catch_all) return "unverified";
 
   if (data.is_reachable === "risky" && data.smtp?.is_deliverable === true) {
-    return true;
+    return "verified";
   }
 
-  return false;
+  if (data.is_reachable === "risky") return "unverified";
+
+  return "unverified";
 }
 
-function buildReason(data, legit) {
-  if (legit) {
-    if (data.is_reachable === "safe") return "mailbox verified";
-    if (data.misc?.is_role_account) return "role account — accepts mail";
-    return "mailbox accepts mail";
+function trustToLegitLabel(trust_level) {
+  switch (trust_level) {
+    case "verified":
+      return "confirmed";
+    case "invalid":
+      return "invalid";
+    case "blocked":
+      return "blocked";
+    default:
+      return "not_confirmed";
   }
+}
 
-  if (data.is_reachable === "invalid") {
-    if (data.smtp?.is_disabled) return "mailbox disabled or does not exist";
-    return "mailbox does not exist";
+function buildReason(data, trust_level) {
+  switch (trust_level) {
+    case "verified":
+      if (data.is_reachable === "safe") return "mailbox verified";
+      if (data.misc?.is_role_account) return "role account — accepts mail";
+      return "mailbox accepts mail";
+    case "invalid":
+      if (data.smtp?.is_disabled) return "mailbox disabled or does not exist";
+      if (data.misc?.is_disposable) return "disposable email";
+      return "mailbox does not exist";
+    case "blocked":
+      return "provider blocked verification";
+    case "unverified":
+      if (data.smtp?.is_catch_all) {
+        return "catch-all domain — cannot verify this mailbox";
+      }
+      if (isMicrosoftMx(data)) {
+        return "microsoft 365 — mailbox not confirmed via SMTP";
+      }
+      if (data.is_reachable === "risky" && data.smtp?.is_deliverable === false) {
+        return "ambiguous SMTP response — mailbox not confirmed";
+      }
+      return "mailbox not confirmed";
+    default:
+      return "mailbox not confirmed";
   }
+}
 
-  if (data.smtp?.is_catch_all) {
-    return "catch-all domain — cannot verify this mailbox";
-  }
-  if (data.misc?.is_disposable) return "disposable email";
-  if (isBlockedByProvider(data)) return "provider blocked verification";
-  if (data.is_reachable === "unknown") return "could not verify";
-
-  return "mailbox not verified";
+function isMicrosoftMx(data) {
+  const records = data.mx?.records ?? [];
+  return records.some((r) => MICROSOFT_MX.test(r));
 }
 
 function isBlockedByProvider(data) {
