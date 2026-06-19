@@ -124,33 +124,48 @@ function mapReacherResult(email, data) {
 }
 
 /**
- * Only Reacher "safe" means the mailbox is proven to exist.
- * Catch-all / risky / unknown may accept mail at SMTP layer but mailbox is NOT verified.
+ * B2B-friendly rules (Reacher only):
+ * - true:  mailbox individually verified (safe), OR deliverable on non-catch-all domain
+ * - false: does not exist, catch-all domain, disposable, or provider blocked
+ *
+ * Catch-all stays false — domain accepts fake addresses too (fake123@domain.com).
+ * Role accounts (talent@, hi@) on normal domains → true if deliverable.
  */
 function mapLegit(data) {
-  return data.is_reachable === "safe";
+  if (data.is_reachable === "invalid") return false;
+  if (data.misc?.is_disposable) return false;
+  if (data.smtp?.is_disabled) return false;
+  if (data.smtp?.is_catch_all) return false;
+
+  if (data.is_reachable === "safe") return true;
+
+  if (data.is_reachable === "risky" && data.smtp?.is_deliverable === true) {
+    return true;
+  }
+
+  return false;
 }
 
 function buildReason(data, legit) {
-  if (legit) return "mailbox verified";
+  if (legit) {
+    if (data.is_reachable === "safe") return "mailbox verified";
+    if (data.misc?.is_role_account) return "role account — accepts mail";
+    return "mailbox accepts mail";
+  }
 
   if (data.is_reachable === "invalid") {
     if (data.smtp?.is_disabled) return "mailbox disabled or does not exist";
-    if (data.misc?.is_disposable) return "disposable email";
     return "mailbox does not exist";
   }
 
   if (data.smtp?.is_catch_all) {
-    return "catch-all domain — mailbox not verified";
-  }
-  if (data.misc?.is_role_account) {
-    return "role account — mailbox not individually verified";
+    return "catch-all domain — cannot verify this mailbox";
   }
   if (data.misc?.is_disposable) return "disposable email";
   if (isBlockedByProvider(data)) return "provider blocked verification";
   if (data.is_reachable === "unknown") return "could not verify";
 
-  return `mailbox not verified (is_reachable: ${data.is_reachable})`;
+  return "mailbox not verified";
 }
 
 function isBlockedByProvider(data) {
