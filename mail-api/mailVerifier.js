@@ -134,6 +134,7 @@ function buildReason(data) {
   const parts = [`is_reachable: ${data.is_reachable}`];
 
   if (data.smtp?.is_catch_all) parts.push("catch-all domain");
+  if (data.smtp?.description) parts.push(data.smtp.description);
   if (data.smtp?.is_deliverable === false && data.smtp?.is_disabled) {
     parts.push("mailbox disabled");
   }
@@ -142,11 +143,23 @@ function buildReason(data) {
   if (data.misc?.is_role_account) parts.push("role account");
   if (data.syntax && !data.syntax.is_valid_syntax) parts.push("invalid syntax");
   if (data.mx && !data.mx.accepts_mail) parts.push("no mx records");
-  if (data.smtp?.is_deliverable === true) parts.push("mailbox deliverable");
-  if (data.smtp?.error) parts.push(String(data.smtp.error));
-  if (data.mx?.error) parts.push(String(data.mx.error));
+  if (data.smtp?.is_deliverable === true && !data.smtp?.is_catch_all) {
+    parts.push("mailbox deliverable");
+  }
+  const smtpErr = formatReacherError(data.smtp?.error);
+  if (smtpErr) parts.push(smtpErr);
+  const mxErr = formatReacherError(data.mx?.error);
+  if (mxErr) parts.push(mxErr);
 
   return parts.join(" — ");
+}
+
+function formatReacherError(err) {
+  if (!err) return null;
+  if (typeof err === "string") return err;
+  if (typeof err.message === "string") return err.message;
+  if (typeof err.description === "string") return err.description;
+  return null;
 }
 
 function pickReacherFields(data) {
