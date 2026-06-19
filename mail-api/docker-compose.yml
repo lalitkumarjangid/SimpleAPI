@@ -1,0 +1,25 @@
+services:
+  reacher:
+    image: reacherhq/backend:latest
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  mail-api:
+    build: .
+    ports:
+      - "${MAIL_API_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      MAIL_API_PORT: 3000
+      MAIL_API_KEY: ${MAIL_API_KEY}
+      REACHER_URL: http://reacher:8080
+      MAIL_MAX_BATCH: ${MAIL_MAX_BATCH:-50}
+      MAIL_CONCURRENCY: ${MAIL_CONCURRENCY:-3}
+      REACHER_PROXY_HOST: ${REACHER_PROXY_HOST:-}
+      REACHER_PROXY_PORT: ${REACHER_PROXY_PORT:-}
+      REACHER_PROXY_USERNAME: ${REACHER_PROXY_USERNAME:-}
+      REACHER_PROXY_PASSWORD: ${REACHER_PROXY_PASSWORD:-}
+    depends_on:
+      - reacher
+    restart: unless-stopped

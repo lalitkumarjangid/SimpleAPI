@@ -1,0 +1,30 @@
+{
+  "name": "mail-api",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node -r dotenv/config index.js",
+    "dev": "node --watch -r dotenv/config index.js",
+    "cli": "node -r dotenv/config cli.js",
+    "reacher:up": "docker compose up -d reacher",
+    "reacher:down": "docker compose down",
+    "prod": "docker compose up -d --build",
+    "prod:down": "docker compose down",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:start:prod": "pm2 start ecosystem.config.cjs --env production",
+    "pm2:stop": "pm2 stop mail-api",
+    "pm2:restart": "pm2 restart mail-api",
+    "pm2:reload": "pm2 reload mail-api",
+    "pm2:delete": "pm2 delete mail-api",
+    "pm2:logs": "pm2 logs mail-api",
+    "pm2:status": "pm2 status mail-api"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "pm2": "^6.0.14"
+  }
+}
